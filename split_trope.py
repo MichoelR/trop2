@@ -14,9 +14,6 @@ def split_trope(sentence):
     # TODO return character number as well so we know where trope was in word
     for word in sentence.split(" "):
         res = re.search(expr, word)
-        # print("word:", word)
-        # print("res:", res)
-        # print("res.0", res.group(0))
         # Only zero/one trope per word.
         try:
             word_trope = res.group(0)
@@ -62,14 +59,14 @@ torah_df = torah_df[["sefer", "perek",  "verse", "pasuk"]]
 # Extract trope
 torah_df["word_trope"] = torah_df["pasuk"].apply(split_trope)
 
-#
-# def get_random_pasuk():
-#     sefer = random.choice(sefarim)
-# ##    pasuk =
-    
-# ch = open(paths[0]).readlines()
-# sent = open(paths[0]).readline()
-# print("sent:", sent)
-# print(split_trope(sent))
+# Reset useless index
+torah_df = torah_df.reset_index(drop=True)
+
+# TODO decision tree for (trope, next_trope) or (trope, previous_trope)
+#  Test the following models:
+#  trope, previous_trope
+#  trope, next_trope
+#  word, trope
+#  and rank them by accuracy %
 
 print("Done!")
