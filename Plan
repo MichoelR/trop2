@@ -1,0 +1,21 @@
+Feb 16 2020
+Did dt for previous trop -> next trop. Were able to predict several trop, most it made no prediction:
+SOF PASUQ --> END
+MAHPAKH --> PASHTA
+PASHTA --> MUNAH (? need to check this, as PASHTA, ZAQEF QATAN is also common, but maybe < 50% of time?)
+MERKHA --> TIPHA
+
+We got 26% predictions, most trop no prediction at all.
+Plan: need to try more complex combinations
+1) Try next trop -> previous trop
+2) Try several trop -> next or previous trop
+How many do we need?
+
+Do we need to move from white box to black box predictor for good predictions (which would mean we can't interpret the results)?
+
+Split into trope system (EMeT, Nach, Chumash) and train models separately.
+
+Look into GMM (Gaussian mixture model, to allow more than one mode: PASHTA --> either MUNAH _or_ ZAQEF QATAN)
+
+Link to Intro: https://drive.google.com/drive/folders/0B1_EiCPi0cabdWNGOGR4enVHTXM
+

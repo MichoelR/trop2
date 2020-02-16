@@ -1,12 +1,13 @@
 import subprocess
 
 import numpy as np
+import pandas as pd
 
 import utils
 
 from scipy.spatial.distance import cosine
 from sklearn.tree import DecisionTreeClassifier, export_graphviz
-from sklearn.metrics import mean_absolute_error
+from sklearn.metrics import mean_absolute_error, accuracy_score, balanced_accuracy_score
 from sklearn.preprocessing import OneHotEncoder
 
 from split_trope import torah_df
@@ -62,8 +63,18 @@ preds = dtc.predict(first_ohe)
 error = mean_absolute_error(second_ohe, preds)
 total_error = (second_ohe - preds).sum()
 cos = cosine(second_ohe.flatten(), preds.flatten())
+acc = accuracy_score(second_ohe, preds)
+# bal_acc = balanced_accuracy_score(second_ohe, preds)
 print("mean absolute error:", error)
 print("total error:", total_error)
+# Cosine distance seems like our best metric
 print("cosine distance:", cos)
+print("accuracy:", acc)
+# print("balanced accuracy:", bal_acc)
+
+#working
+trop_data_df = pd.DataFrame(data=first_ohe, columns=trop_names)
+trop_lbl_df = pd.DataFrame(data=second_ohe, columns=trop_names)
+trop_pred_df = pd.DataFrame(data=preds, columns=trop_names)
 
 print("done")
