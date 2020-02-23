@@ -1,3 +1,6 @@
+import datetime
+import os
+import time
 import subprocess
 
 import numpy as np
@@ -12,6 +15,10 @@ from sklearn.preprocessing import OneHotEncoder
 
 from split_trope import torah_df
 
+# VARS
+timestamp = str(datetime.datetime.now()).split(".")[0].replace(" ", "-").replace(":", "-")
+outfolder = os.path.join("out", timestamp)
+os.makedirs(outfolder, exist_ok=False)
 
 # Data
 # We need trop + BEGIN and END labels
@@ -33,32 +40,39 @@ trop_pairs = np.array(trop_pairs)
 
 # We will use first_trop to predict second_trop
 first_trops = trop_pairs[:, 0].reshape(-1, 1)
-second_trops = trop_pairs[:, 1].reshape(-1, 1)
+
+# second_trops = trop_pairs[:, 1].reshape(-1, 1)
+#first_trops = trop_pairs[:, 0]
+second_trops = trop_pairs[:, 1]
 
 # Encode trop as onehot embedding
-# TODO-DONE link with all_trope in split_trope
 enc = OneHotEncoder(categories=[all_trope], sparse=False)
-enc.fit(np.append(first_trops, [["END"]], axis=0))
+# enc.fit(np.append(first_trops, [["END"]], axis=0))
+enc.fit(np.append(first_trops, [['֢'], ["END"]], axis=0))
 
-# Transform data and labels
+# # Transform data and labels
 first_ohe = enc.transform(first_trops)
-second_ohe = enc.transform(second_trops)
+# second_ohe = enc.transform(second_trops)
 
 # Train
 dtc = DecisionTreeClassifier()
-dtc.fit(first_ohe, second_ohe)
+# dtc.fit(first_ohe, second_ohe)
+# TODO-URGENT labels are NOT in the same order as data! NEED to pass in categories explicitly somehow.
+dtc.fit(first_ohe, np.append(second_trops[:-2], ['֢', "BEGIN"], axis=0))
 
-# TODO can we get labeled classes?
 # Save visualization
-export_graphviz(dtc, out_file="out/trop_tree.dot",
-    # class_names=dtc.classes_,
-    feature_names=trop_names)
+export_graphviz(dtc, out_file=os.path.join(outfolder, "trop_tree.dot"),
+    class_names=dtc.classes_,
+    feature_names=trop_names,
+    node_ids=True)
 
-# subprocess.call("dot -Tpng out/trop_tree.dot -o out/trop_tree.png")
+subprocess.call(f"dot -Tpng {outfolder}/trop_tree.dot -o {outfolder}/trop_tree.png", shell=True)
 # Predict
 # TODO validation data
 preds = dtc.predict(first_ohe)
+probs = dtc.predict_proba(first_ohe)
 
+# TODO fix metrics
 # Evaluate model
 error = mean_absolute_error(second_ohe, preds)
 total_error = (second_ohe - preds).sum()
@@ -74,7 +88,7 @@ print("accuracy:", acc)
 
 #working
 trop_data_df = pd.DataFrame(data=first_ohe, columns=trop_names)
-trop_lbl_df = pd.DataFrame(data=second_ohe, columns=trop_names)
-trop_pred_df = pd.DataFrame(data=preds, columns=trop_names)
+# trop_lbl_df = pd.DataFrame(data=second_ohe, columns=trop_names)
+trop_pred_df = pd.DataFrame(data=probs, columns=trop_names)
 
 print("done")

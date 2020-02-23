@@ -68,11 +68,3 @@ torah_df["word_trope"] = torah_df["pasuk"].apply(split_trope)
 # torah_df = torah_df[~torah_df["is_a_none"]]
 # Reset useless index
 torah_df = torah_df.reset_index(drop=True)
-
-# TODO decision tree for (trope, next_trope) or (trope, previous_trope)
-#  Test the following models:
-#  trope, previous_trope
-#  trope, next_trope
-#  word, trope
-#  and rank them by accuracy %
-
