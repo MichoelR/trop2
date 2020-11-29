@@ -74,33 +74,52 @@ def groupby_looper2(bhsac_df):
         sent_gram = []
         sent_trope = []
 
+        sent_word_nodes = []
+        sent_gram_nodes = []
+        sent_trope_nodes = []
+
         for i, row in verse.iterrows():
             # Grammar
             # labels
-            if row.otype == "clause_atom":
-                sent_gram.append(row.typ)
+            if row.otype == "clause":
+                sent_gram.append(row.kind)
+                sent_gram_nodes.append(row.n)
             elif row.otype == "phrase_atom":
                 sent_gram.append(row.typ)
+                sent_gram_nodes.append(row.n)
             elif row.otype == "word":
                 sent_gram.append(row.pdp)
+                sent_gram_nodes.append(row.n)
             # flags
             elif row.otype == "sentence_atom":
                 sent_gram.append("sentence_atom")
+                sent_gram_nodes.append(row.n)
 
             # Words and trope
             if row.g_word_utf8 is not np.nan:
+                # word
                 word = row.g_word_utf8
-                res = re.search(pattern, word)
-                try:
-                    word_trope = res.group(0)
-                except AttributeError:
-                    continue
+                # qere-ketiv- have to check for nan and 'x is np.nan' doesn't work on this column so we do this nonsense.
+                if isinstance(row.qere_utf8, str) and len(row.qere_utf8) > 0:
+                    word = row.qere_utf8
                 sent_word.append(word)
-                sent_trope.append(word_trope)
+                sent_word_nodes.append(row.n)
+
+                # trope
+                try:
+                    res = re.search(pattern, word)
+                    word_trope = res.group(0)
+                    sent_trope.append(word_trope)
+                    sent_trope_nodes.append(row.n)
+                # if no trope
+                except AttributeError:
+                    pass
 
         # Get that sof pasuk
         sent_word.append(verse.g_word_utf8.iloc[-1])
+        sent_word_nodes.append(verse.n.iloc[-1])
         sent_trope.append(chr(1475))
+        sent_trope_nodes.append(verse.n.iloc[-1])
 
         yield sent_word, sent_gram, sent_trope, verse_id
 
@@ -120,7 +139,7 @@ if __name__ == "__main__":
     # z = next(data)
     #list(zip(x[0][0], x[1][0]))
     # TODO save results
-    with open("data/grammar_v_trop.txt", "wb") as grammar_v_trop:
+    with open("data/grammar_v_trop-v2.txt", "wb") as grammar_v_trop:
         for pasuk, grammar, trope, id in looper:
             grammar_v_trop.write("\t".join([str(pasuk), str(grammar), str(trope), str(id.values.tolist()[0])]).encode("utf-8"))
             grammar_v_trop.write("\n".encode("utf-8"))
