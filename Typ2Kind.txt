@@ -1,0 +1,3 @@
+VC	Verbal clauses	InfA	InfC	Ptcp	Way0	WayX	WIm0	WImX	WQt0	WQtX	WxI0	WXIm	WxIX	WxQ0	WXQt	WxQX	WxY0	WXYq	WxYX	WYq0	WYqX	xIm0	XImp	xImX	xQt0	XQtl	xQtX	xYq0	XYqt	xYqX	ZIm0	ZImX	ZQt0	ZQtX	ZYq0	ZYqX
+NC	Nominal clauses	AjCl	NmCl																																	
+WP	Clauses without predication	CPen	Ellp	MSyn	Reop	Voct	XPos																													

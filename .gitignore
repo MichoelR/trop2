@@ -2,3 +2,4 @@ hebrew_eng_parallel_bible/*
 .idea/*
 out/*
 __pycache__/*
+venv/*

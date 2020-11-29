@@ -1,3 +1,4 @@
+"""Trope parser. Returns list of trop per pasuk."""
 import glob
 import random
 import matplotlib.pyplot as plt
@@ -68,3 +69,5 @@ torah_df["word_trope"] = torah_df["pasuk"].apply(split_trope)
 # torah_df = torah_df[~torah_df["is_a_none"]]
 # Reset useless index
 torah_df = torah_df.reset_index(drop=True)
+
+print("Done!")
