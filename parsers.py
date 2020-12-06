@@ -13,7 +13,8 @@ def groupby_looper2(bhsac_df):
     pattern = "[" + "".join(utils.trops) + "]"
     gby = bhsac_df.groupby(by="in.verse")
 
-    for g in gby:
+    for verse_count, g in enumerate(gby):
+        if not (verse_count % 1000): print(verse_count)
         # n = starting point of verse
         verse_id = bhsac_df[bhsac_df.n == g[0]][["book", "chapter", "verse", "n"]]
         verse = g[1]
@@ -47,7 +48,7 @@ def groupby_looper2(bhsac_df):
             if row.g_word_utf8 is not np.nan:
                 # word
                 word = row.g_word_utf8
-                print(word)
+                # print(word)
                 # qere-ketiv- have to check for nan and 'x is np.nan' doesn't work on this column so we do this nonsense.
                 if isinstance(row.qere_utf8, str) and len(row.qere_utf8) > 0:
                     word = row.qere_utf8
