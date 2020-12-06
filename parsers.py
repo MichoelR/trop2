@@ -7,58 +7,6 @@ import pandas as pd
 import utils
 
 
-# def groupby_looper(bhsac_df):
-#     """Yields a single verse at a time, in order, with human readable identifier."""
-#     # Groupby looping
-#     gby = bhsac_df.groupby(by="in.verse")
-#     for g in gby:
-#         verse_id = bhsac_df[bhsac_df.n == g[0]][["book", "chapter", "verse", "n"]]
-#         yield g[1], verse_id
-#
-# def split_all_grammar(bhsac_df):
-#     """Returns a single grammar sequence for each verse."""
-#     for verse, id in groupby_looper(bhsac_df):
-#         seq = []
-#         for i, row in verse.iterrows():
-#             # labels
-#             if row.otype == "clause_atom":
-#                 seq.append(row.typ)
-#             elif row.otype == "phrase_atom":
-#                 seq.append(row.typ)
-#             elif row.otype == "word":
-#                 seq.append(row.pdp)
-#             # flags
-#             elif row.otype == "sentence_atom":
-#                 seq.append("sentence_atom")
-#             # else:
-#             #     raise ValueError("unrecognized otype")
-#         yield seq, id
-#
-# def split_trope(verse):
-#     """For each word in a verse, split into (word, trope)."""
-#     expr = "[" + "".join(utils.trops) + "]"
-#     sent_trope = []
-#     # TODO return character number as well so we know where trope was in word
-#     for word in verse.split(" "):
-#         res = re.search(expr, word)
-#         # Only zero/one trope per word.
-#         try:
-#             word_trope = res.group(0)
-#         except AttributeError:
-#             continue
-#
-#         sent_trope.append((word, word_trope))
-#
-#     # # last word gets sof pasuk- won't get caught by regex because sof pasuk is not in g_word_utf8
-#     # sent_trope.append((verse.split(" ")[-1], chr(1475)))
-#     return sent_trope
-#
-# def split_all_trope(bhsac_df):
-#     for verse, id in groupby_looper(bhsac_df):
-#         verse_str = " ".join(verse.g_word_utf8.dropna()) + chr(1475)
-#         yield split_trope(verse_str), id
-
-# TODO single loop read
 def groupby_looper2(bhsac_df):
     """Yields a single verse at a time, in order, with human readable identifier."""
     # Groupby looping
@@ -99,6 +47,7 @@ def groupby_looper2(bhsac_df):
             if row.g_word_utf8 is not np.nan:
                 # word
                 word = row.g_word_utf8
+                print(word)
                 # qere-ketiv- have to check for nan and 'x is np.nan' doesn't work on this column so we do this nonsense.
                 if isinstance(row.qere_utf8, str) and len(row.qere_utf8) > 0:
                     word = row.qere_utf8
@@ -107,42 +56,42 @@ def groupby_looper2(bhsac_df):
 
                 # trope
                 try:
-                    res = re.search(pattern, word)
-                    word_trope = res.group(0)
-                    sent_trope.append(word_trope)
-                    sent_trope_nodes.append(row.n)
+                # res = re.search(pattern, word)
+                    all_trope = re.findall(pattern, word)
+                    if len(all_trope):
+                        if all_trope[-1] == chr(1433):
+                            word_trope = all_trope[-1]
+                        else:
+                            word_trope = all_trope[0]
+                        sent_trope.append(word_trope)
+                        sent_trope_nodes.append(row.n)
+                    else:
+                        pass
+                        # print(f"skipping {word}")
                 # if no trope
-                except AttributeError:
-                    pass
+                except BaseException as e:
+                    print(e)
 
         # Get that sof pasuk
-        sent_word.append(verse.g_word_utf8.iloc[-1])
-        sent_word_nodes.append(verse.n.iloc[-1])
+        # sent_word.append(verse.g_word_utf8.iloc[-1])
+        # sent_word_nodes.append(verse.n.iloc[-1])
         sent_trope.append(chr(1475))
         sent_trope_nodes.append(verse.n.iloc[-1])
 
-        yield sent_word, sent_gram, sent_trope, verse_id
+        yield sent_word, sent_gram, sent_trope, sent_word_nodes, sent_gram_nodes, sent_trope_nodes, verse_id
 
 
 if __name__ == "__main__":
     path = "data/bhsac.tsv"
     bhsac_df = pd.read_csv(path, sep="\t")
     looper = groupby_looper2(bhsac_df=bhsac_df)
-    # df = pd.DataFrame(data=looper)
-    # x = next(looper)
-    # data = zip(split_all_grammar(bhsac_df), split_all_trope(bhsac_df))
-    # gram = split_all_grammar(bhsac_df)
-    # trop = split_all_trope(bhsac_df)
-    # df = pd.DataFrame(data=[gram, trop])
-    # x = next(data)
-    # y = next(data)
-    # z = next(data)
-    #list(zip(x[0][0], x[1][0]))
+
     # TODO save results
-    with open("data/grammar_v_trop-v2.txt", "wb") as grammar_v_trop:
-        for pasuk, grammar, trope, id in looper:
-            grammar_v_trop.write("\t".join([str(pasuk), str(grammar), str(trope), str(id.values.tolist()[0])]).encode("utf-8"))
+    with open("data/grammar_v_trop-v2.2.txt", "wb") as grammar_v_trop:
+        for sent_word, sent_gram, sent_trope, sent_word_nodes, sent_gram_nodes, sent_trope_nodes, verse_id in looper:
+            grammar_v_trop.write("\t".join([str(sent_word), str(sent_gram), str(sent_trope), str(sent_word_nodes), str(sent_gram_nodes), str(sent_trope_nodes), str(verse_id.values.tolist()[0])]).encode("utf-8"))
             grammar_v_trop.write("\n".encode("utf-8"))
 
     print("Done!")
 # ((1,2), ((3,4),5)) -> [1,3,4,2,5]
+# Current version: v2.1

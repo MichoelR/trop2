@@ -52,6 +52,8 @@ import numpy as np
 import tensorflow as tf
 from tensorflow import keras
 
+import parsers
+
 # gpu memory config
 gpus = tf.config.experimental.list_physical_devices('GPU')
 for gpu in gpus:
@@ -93,6 +95,7 @@ target_texts = []
 input_characters = set()
 target_characters = set()
 max_idx = 100000
+# TODO replace with groupby_looper2()
 with open(data_path, "r", encoding="utf-8") as f:
     lines = f.read().split("\n")[:max_idx]
     random.shuffle(lines)
