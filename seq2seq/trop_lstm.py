@@ -60,61 +60,38 @@ gpus = tf.config.experimental.list_physical_devices('GPU')
 for gpu in gpus:
   tf.config.experimental.set_memory_growth(gpu, True)
 
-#os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
-
-"""
-## Download the data
-"""
-
-"""shell
-!curl -O http://www.manythings.org/anki/fra-eng.zip
-!unzip fra-eng.zip
-"""
-
-"""
-## Configuration
-"""
-
+# VARS
 model_name = "hebrew"
-version = "0-test"
+version = "1-short_pesukim"
 ckpt_path = os.path.join("ckpt", model_name, version + ".h5")
+log_path = os.path.join("log", model_name, version)
 os.makedirs(os.path.dirname(ckpt_path), exist_ok=True)
 batch_size = 64  # Batch size for training.
 epochs = 100  # Number of epochs to train for.
 latent_dim = 256  # Latent dimensionality of the encoding space.
 num_samples = 10000  # Number of samples to train on.
-# Path to the data txt file on disk.
-# data_path = "fra.txt"
 
-"""
-## Prepare the data
-"""
-
+# DATA
 # Vectorize the data.
 input_texts = []
 target_texts = []
 input_characters = set()
 target_characters = set()
-max_idx = 100000
-# TODO-DONE replace with groupby_looper2()
-# with open(data_path, "r", encoding="utf-8") as f:
-#     lines = f.read().split("\n")[:max_idx]
-#     random.shuffle(lines)
+
 path = "../data/bhsac.tsv"
 bhsac_df = pd.read_csv(path, sep="\t")
-lines = parsers.groupby_looper2(bhsac_df)
-    
-# for line in lines[: min(num_samples, len(lines) - 1)]:
-for line in lines:
-    # input_text, target_text, _ = line.split("\t")
+lines = list(parsers.groupby_looper2(bhsac_df))
+
+# Sort lines
+lines.sort(key=lambda x: len(x[0]))
+
+for line in lines[: min(num_samples, len(lines) - 1)]:
     pasuk, input_text, target_text, _, _, _, _ = line
-    # print(pasuk)
     input_text = input_text.copy()
     target_text = target_text.copy()
 
     # We use "tab" as the "start sequence" character
     # for the targets, and "\n" as "end sequence" character.
-    # target_text = "\t" + target_text + "\n"
     target_text.insert(0, "\t")
     target_text.append("\n")
     input_texts.append(input_text)
@@ -141,7 +118,6 @@ print("Number of unique input tokens:", num_encoder_tokens)
 print("Number of unique output tokens:", num_decoder_tokens)
 print("Max sequence length for inputs:", max_encoder_seq_length)
 print("Max sequence length for outputs:", max_decoder_seq_length)
-# TODO-DONE refactor tokens for trop
 
 # Index all input and output chars
 input_token_index = dict([(char, i) for i, char in enumerate(input_characters)])
@@ -157,7 +133,7 @@ decoder_input_data = np.zeros(
 decoder_target_data = np.zeros(
     (len(input_texts), max_decoder_seq_length, num_decoder_tokens), dtype="float32"
 )
-# TODO-DONE refactor matrix build for trop.
+
 for i, (input_text, target_text) in enumerate(zip(input_texts, target_texts)):
     for t, char in enumerate(input_text):
         encoder_input_data[i, t, input_token_index[char]] = 1.0
@@ -172,10 +148,25 @@ for i, (input_text, target_text) in enumerate(zip(input_texts, target_texts)):
     # decoder_input_data[i, t + 1 :, target_token_index[" "]] = 1.0
     # decoder_target_data[i, t:, target_token_index[" "]] = 1.0
 
-"""
-## Build the model
-"""
+# Create dataset
+# We need this crazy idx trick to figure out our train-test split for our own validation.
+idx = range(num_samples)
+ds = tf.data.Dataset.from_tensor_slices(((encoder_input_data, decoder_input_data), decoder_target_data, np.array(idx).reshape(-1,1)))
+ds = ds.shuffle(buffer_size=num_samples).batch(batch_size)
+split = int((num_samples * .9) / batch_size)
+ds_train = ds.take(split)
+ds_test = ds.skip(split)
 
+# Pull of indexes for later experiments- note that we drop the last batch for simplicity.
+ds_train_idx = ds_train.map(lambda x, y, z: z)
+train_idx = np.array(list(ds_train_idx)[:-1]).reshape(-1)
+ds_train = ds_train.map(lambda x, y, z: (x, y))
+
+ds_test_idx = ds_test.map(lambda x, y, z: z)
+test_idx = np.array(list(ds_test_idx)[:-1]).reshape(-1)
+ds_test = ds_test.map(lambda x, y, z: (x, y))
+
+# MODEL
 # Define an input sequence and process it.
 encoder_inputs = keras.Input(shape=(None, num_encoder_tokens))
 encoder = keras.layers.LSTM(latent_dim, return_state=True)
@@ -195,8 +186,6 @@ decoder_outputs, _, _ = decoder_lstm(decoder_inputs, initial_state=encoder_state
 decoder_dense = keras.layers.Dense(num_decoder_tokens, activation="softmax")
 decoder_outputs = decoder_dense(decoder_outputs)
 
-# TODO-DECIDE add params to model?
-# TODO-DECIDE deeper model?
 # Define the model that will turn
 # `encoder_input_data` & `decoder_input_data` into `decoder_target_data`
 model = keras.Model([encoder_inputs, decoder_inputs], decoder_outputs)
@@ -204,29 +193,21 @@ model = keras.Model([encoder_inputs, decoder_inputs], decoder_outputs)
 # Callbacks
 early_stopper = tf.keras.callbacks.EarlyStopping(monitor='loss', patience=3, min_delta=0.005)
 model_checkpoint = tf.keras.callbacks.ModelCheckpoint(ckpt_path, monitor='loss')
+tboard = tf.keras.callbacks.TensorBoard(log_dir=log_path)
 
-"""
-## Train the model
-"""
-
+# TRAIN
 model.compile(
     optimizer="rmsprop", loss="categorical_crossentropy", metrics=["accuracy"]
 )
+
 model.fit(
-    [encoder_input_data, decoder_input_data],
-    decoder_target_data,
-    batch_size=batch_size,
+    ds_train,
     epochs=epochs,
-    validation_split=0.2,
-    callbacks=[early_stopper, model_checkpoint],
+    validation_data=ds_test,
+    callbacks=[early_stopper, model_checkpoint, tboard],
 )
 # Save model
 model.save(ckpt_path)
-
-# =============================================================================
-# model.save("debug2.h5")
-# model = keras.models.load_model("debug2.h5")
-# =============================================================================
 
 """
 ## Run inference (sampling)
@@ -307,15 +288,15 @@ def decode_sequence(input_seq):
 You can now generate decoded sentences as such:
 """
 
-for seq_index in range(20):
-    # Take one sequence (part of the training set)
-    # for trying out decoding.
-    # offset = 5000
-    input_seq = encoder_input_data[seq_index: seq_index + 1]
-    decoded_sentence = decode_sequence(input_seq)
-    print("-")
-    print("Input sentence:", input_texts[seq_index])
-    # print("Decoded sentence:", decoded_sentence)
-    print("Decoded sentence:", [utils.trop_names[x] for x in  list(decoded_sentence[:-1])])
+with open("validation_generated.txt", "w") as valid_file:
+    for seq_index in test_idx:
+        # Take one sequence (part of the training set)
+        # for trying out decoding.
+        input_seq = encoder_input_data[seq_index: seq_index + 1]
+        decoded_sentence = decode_sequence(input_seq)
+        print("-", file=valid_file)
+        print("Input sentence:", input_texts[seq_index], file=valid_file)
+        print("True output:", [utils.trop_names[x] for x in target_texts[seq_index][1:-1]], file=valid_file)
+        print("Decoded sentence:", [utils.trop_names[x] for x in list(decoded_sentence[:-1])], file=valid_file)
 
 print("Done!")

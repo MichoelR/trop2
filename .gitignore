@@ -1,5 +1,8 @@
 hebrew_eng_parallel_bible/*
 .idea/*
 out/*
+*/log/*
+*/ckpt/*
 __pycache__/*
 venv/*
+validation_generated.txt
