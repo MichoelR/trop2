@@ -62,7 +62,8 @@ for gpu in gpus:
 
 # VARS
 model_name = "hebrew"
-version = "1-short_pesukim"
+version = "2-proper_shuffling"
+# version = "0-test"
 ckpt_path = os.path.join("ckpt", model_name, version + ".h5")
 log_path = os.path.join("log", model_name, version)
 os.makedirs(os.path.dirname(ckpt_path), exist_ok=True)
@@ -152,12 +153,12 @@ for i, (input_text, target_text) in enumerate(zip(input_texts, target_texts)):
 # We need this crazy idx trick to figure out our train-test split for our own validation.
 idx = range(num_samples)
 ds = tf.data.Dataset.from_tensor_slices(((encoder_input_data, decoder_input_data), decoder_target_data, np.array(idx).reshape(-1,1)))
-ds = ds.shuffle(buffer_size=num_samples).batch(batch_size)
+ds = ds.shuffle(buffer_size=num_samples, reshuffle_each_iteration=False).batch(batch_size)
 split = int((num_samples * .9) / batch_size)
 ds_train = ds.take(split)
 ds_test = ds.skip(split)
 
-# Pull of indexes for later experiments- note that we drop the last batch for simplicity.
+# Pull our indexes for later experiments- note that we drop the last batch for simplicity.
 ds_train_idx = ds_train.map(lambda x, y, z: z)
 train_idx = np.array(list(ds_train_idx)[:-1]).reshape(-1)
 ds_train = ds_train.map(lambda x, y, z: (x, y))
@@ -165,6 +166,9 @@ ds_train = ds_train.map(lambda x, y, z: (x, y))
 ds_test_idx = ds_test.map(lambda x, y, z: z)
 test_idx = np.array(list(ds_test_idx)[:-1]).reshape(-1)
 ds_test = ds_test.map(lambda x, y, z: (x, y))
+
+train_idx.sort()
+test_idx.sort()
 
 # MODEL
 # Define an input sequence and process it.
@@ -191,8 +195,8 @@ decoder_outputs = decoder_dense(decoder_outputs)
 model = keras.Model([encoder_inputs, decoder_inputs], decoder_outputs)
 
 # Callbacks
-early_stopper = tf.keras.callbacks.EarlyStopping(monitor='loss', patience=3, min_delta=0.005)
-model_checkpoint = tf.keras.callbacks.ModelCheckpoint(ckpt_path, monitor='loss')
+early_stopper = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=3, min_delta=0.005)
+model_checkpoint = tf.keras.callbacks.ModelCheckpoint(ckpt_path, monitor='val_loss', save_best_only=True)
 tboard = tf.keras.callbacks.TensorBoard(log_dir=log_path)
 
 # TRAIN
@@ -287,6 +291,8 @@ def decode_sequence(input_seq):
 """
 You can now generate decoded sentences as such:
 """
+
+print(f"num test elems in train (should be zero!): {np.isin(test_idx, train_idx).sum()}")
 
 with open("validation_generated.txt", "w") as valid_file:
     for seq_index in test_idx:
