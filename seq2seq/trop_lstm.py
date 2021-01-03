@@ -62,7 +62,7 @@ for gpu in gpus:
 
 # VARS
 model_name = "hebrew"
-version = "2-proper_shuffling"
+version = "3-length_only"
 # version = "0-test"
 ckpt_path = os.path.join("ckpt", model_name, version + ".h5")
 log_path = os.path.join("log", model_name, version)
@@ -105,6 +105,16 @@ for line in lines[: min(num_samples, len(lines) - 1)]:
     for char in target_text:
         if char not in target_characters:
             target_characters.add(char)
+
+# For binary model- Create new, simpler input texts for training.
+original_input_texts = input_texts
+input_characters = ["x"]
+input_texts = []
+for sent in original_input_texts:
+    simple_sent = []
+    for char in sent:
+        simple_sent.append("x")
+    input_texts.append(simple_sent)
 
 # Aggregate
 input_characters = sorted(list(input_characters))
@@ -294,14 +304,15 @@ You can now generate decoded sentences as such:
 
 print(f"num test elems in train (should be zero!): {np.isin(test_idx, train_idx).sum()}")
 
-with open("validation_generated.txt", "w") as valid_file:
+with open(f"{model_name}_{version}_validation_generated.txt", "w") as valid_file:
     for seq_index in test_idx:
         # Take one sequence (part of the training set)
         # for trying out decoding.
         input_seq = encoder_input_data[seq_index: seq_index + 1]
         decoded_sentence = decode_sequence(input_seq)
         print("-", file=valid_file)
-        print("Input sentence:", input_texts[seq_index], file=valid_file)
+        # print("Input sentence:", input_texts[seq_index], file=valid_file)
+        print("Input sentence:", original_input_texts[seq_index], file=valid_file)
         print("True output:", [utils.trop_names[x] for x in target_texts[seq_index][1:-1]], file=valid_file)
         print("Decoded sentence:", [utils.trop_names[x] for x in list(decoded_sentence[:-1])], file=valid_file)
 

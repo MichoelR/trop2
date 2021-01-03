@@ -5,4 +5,4 @@ out/*
 */ckpt/*
 __pycache__/*
 venv/*
-validation_generated.txt
+*validation_generated*.txt
