@@ -61,16 +61,19 @@ for gpu in gpus:
   tf.config.experimental.set_memory_growth(gpu, True)
 
 # VARS
-model_name = "hebrew"
-version = "3-length_only"
-# version = "0-test"
-ckpt_path = os.path.join("ckpt", model_name, version + ".h5")
-log_path = os.path.join("log", model_name, version)
-os.makedirs(os.path.dirname(ckpt_path), exist_ok=True)
 batch_size = 64  # Batch size for training.
 epochs = 100  # Number of epochs to train for.
 latent_dim = 256  # Latent dimensionality of the encoding space.
 num_samples = 10000  # Number of samples to train on.
+patience = 30
+model_name = "hebrew"
+style = "full"
+version = f"3-{style}-patience={patience}"
+# version = "0-test"
+ckpt_path = os.path.join("ckpt", model_name, version + ".h5")
+log_path = os.path.join("log", model_name, version)
+os.makedirs(os.path.dirname(ckpt_path), exist_ok=True)
+
 
 # DATA
 # Vectorize the data.
@@ -78,12 +81,14 @@ input_texts = []
 target_texts = []
 input_characters = set()
 target_characters = set()
-
+# TODO drop EMES trop sefarim (iyov, mishlei, tehilim)
 path = "../data/bhsac.tsv"
 bhsac_df = pd.read_csv(path, sep="\t")
 lines = list(parsers.groupby_looper2(bhsac_df))
 
 # Sort lines
+# TODO this reduces the complexity of the training set since we only use first N. Bad.
+#  It also means that we can't even predict for longer pesukim, I think, since max sequence length is a hyperparam.
 lines.sort(key=lambda x: len(x[0]))
 
 for line in lines[: min(num_samples, len(lines) - 1)]:
@@ -98,7 +103,7 @@ for line in lines[: min(num_samples, len(lines) - 1)]:
     input_texts.append(input_text)
     target_texts.append(target_text)
 
-    # Compile sets
+    # Compile character sets
     for char in input_text:
         if char not in input_characters:
             input_characters.add(char)
@@ -106,15 +111,20 @@ for line in lines[: min(num_samples, len(lines) - 1)]:
         if char not in target_characters:
             target_characters.add(char)
 
-# For binary model- Create new, simpler input texts for training.
+# TODO-DECIDE is this where we're setting it to be sentence length?
+# TODO-DONE should encode grammar tokens, not sentence length (for full model)
+# For length-only binary model- Use simpler input texts for training.
 original_input_texts = input_texts
-input_characters = ["x"]
-input_texts = []
-for sent in original_input_texts:
-    simple_sent = []
-    for char in sent:
-        simple_sent.append("x")
-    input_texts.append(simple_sent)
+if style == "length":
+    # We only pass sentence length into the model
+    input_characters = ["x"]
+    input_texts = []
+
+    for sent in original_input_texts:
+        simple_sent = []
+        for char in sent:
+            simple_sent.append("x")
+        input_texts.append(simple_sent)
 
 # Aggregate
 input_characters = sorted(list(input_characters))
@@ -148,7 +158,9 @@ decoder_target_data = np.zeros(
 for i, (input_text, target_text) in enumerate(zip(input_texts, target_texts)):
     for t, char in enumerate(input_text):
         encoder_input_data[i, t, input_token_index[char]] = 1.0
-    # encoder_input_data[i, t + 1 :, input_token_index[" "]] = 1.0
+    # TODO-DECIDE do we need an input stop token? Why?
+    # if style == "full": # skip for "length" only model, since rest will be zeroes.
+    #     encoder_input_data[i, t+1:, input_token_index[" "]] = 1.0
     for t, char in enumerate(target_text):
         # decoder_target_data is ahead of decoder_input_data by one timestep
         decoder_input_data[i, t, target_token_index[char]] = 1.0
@@ -205,7 +217,7 @@ decoder_outputs = decoder_dense(decoder_outputs)
 model = keras.Model([encoder_inputs, decoder_inputs], decoder_outputs)
 
 # Callbacks
-early_stopper = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=3, min_delta=0.005)
+early_stopper = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=patience, min_delta=0.005)
 model_checkpoint = tf.keras.callbacks.ModelCheckpoint(ckpt_path, monitor='val_loss', save_best_only=True)
 tboard = tf.keras.callbacks.TensorBoard(log_dir=log_path)
 
@@ -304,7 +316,7 @@ You can now generate decoded sentences as such:
 
 print(f"num test elems in train (should be zero!): {np.isin(test_idx, train_idx).sum()}")
 
-with open(f"{model_name}_{version}_validation_generated.txt", "w") as valid_file:
+with open(os.path.join("log", f"{model_name}_{version}_validation_generated.txt"), "w") as valid_file:
     for seq_index in test_idx:
         # Take one sequence (part of the training set)
         # for trying out decoding.

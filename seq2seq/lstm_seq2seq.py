@@ -140,7 +140,7 @@ decoder_input_data = np.zeros(
 decoder_target_data = np.zeros(
     (len(input_texts), max_decoder_seq_length, num_decoder_tokens), dtype="float32"
 )
-# TODO refactor matrix build for trop.
+# TODO-DONE refactor matrix build for trop.
 for i, (input_text, target_text) in enumerate(zip(input_texts, target_texts)):
     for t, char in enumerate(input_text):
         encoder_input_data[i, t, input_token_index[char]] = 1.0

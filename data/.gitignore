@@ -1,4 +1,4 @@
 # Ignore everything, but not this gitignore.
 *
 !.gitignore
-
+!grammar_v_trop*
