@@ -84,6 +84,7 @@ def groupby_looper2(bhsac_df):
 
 def compile_sets(lines, num_samples):
     """Input comes from list(groupby_looper2(bhsac_df)). Turns the lines into character and text sets for the trop LSTM.
+    The grammar will be in a prefix graph notation (a sentence with phrase label prepended to each phrase/clause).
 
     The data will still need further preprocessing (build_lstm_inputs())."""
     # Set of characters in each language

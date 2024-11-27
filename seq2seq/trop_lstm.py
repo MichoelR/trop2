@@ -85,9 +85,8 @@ path = "../data/bhsac.tsv"
 bhsac_df = pd.read_csv(path, sep="\t")
 lines = list(parsers.groupby_looper2(bhsac_df))
 
-# Sort lines
-# TODO this reduces the complexity of the training set since we only use first N. Bad.
-#  It also means that we can't even predict for longer pesukim, I think, since max sequence length is a hyperparam.
+# Sort lines- this gives us pesukim from across different sefarim in our data printout later.
+# Data is shuffled for training.
 lines.sort(key=lambda x: len(x[0]))
 
 # Turn the lines (one pasuk each) into character and text sets for the trop LSTM
@@ -172,19 +171,18 @@ reverse_target_char_index = dict((i, char) for char, i in target_token_index.ite
 
 print(f"num test elems in train (should be zero!): {np.isin(test_idx, train_idx).sum()}")
 
-# TODO store decoded pesukim in machine readable format. Add original pesukim (with original trop) to format.
-with open(os.path.join("log", f"{model_name}_{version}_validation_generated.txt"), "w") as valid_file:
+# TODO-DONE store decoded pesukim in machine readable format. Add original pesukim (with original trop) to format.
+with open(os.path.join("log", f"{model_name}_{version}_validation_generated.txt"), "w", encoding='utf-8') as valid_file:
     for seq_index in test_idx:
         # Take one sequence (part of the training set)
         # for trying out decoding.
         input_seq = encoder_input_data[seq_index: seq_index + 1]
-        # decoded_sentence = decode_sequence(input_seq)
         decoded_sentence = models.decode_sequence(input_seq, encoder_model, decoder_model, reverse_target_char_index, target_token_index, max_decoder_seq_length)
         print("-", file=valid_file)
-        # print("Input sentence:", input_texts[seq_index], file=valid_file)
-        print("Input sentence:", original_input_texts[seq_index], file=valid_file)
-        print("True output:", [utils.trop_names[x] for x in target_texts[seq_index][1:-1]], file=valid_file)
-        print("Decoded sentence:", [utils.trop_names[x] for x in list(decoded_sentence[:-1])], file=valid_file)
+        print("Input verse:  ", lines[seq_index][0], file=valid_file)
+        print("Input grammar:", original_input_texts[seq_index], file=valid_file)
+        print("Actual trop:  ", [utils.trop_names[x] for x in target_texts[seq_index][1:-1]], file=valid_file)
+        print("Decoded trop: ", [utils.trop_names[x] for x in list(decoded_sentence[:-1])], file=valid_file)
 
 print("Done!")
 # TODO transformers experiment.
