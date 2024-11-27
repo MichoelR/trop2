@@ -52,6 +52,7 @@ import pandas as pd
 import tensorflow as tf
 from tensorflow import keras
 
+import models
 import parsers
 import utils
 
@@ -68,8 +69,8 @@ num_samples = 10000  # Number of samples to train on.
 patience = 30
 model_name = "hebrew"
 style = "full"
-version = f"3-{style}-patience={patience}"
-# version = "0-test"
+# version = f"3-{style}-patience={patience}"
+version = "0-test"
 ckpt_path = os.path.join("ckpt", model_name, version + ".h5")
 log_path = os.path.join("log", model_name, version)
 os.makedirs(os.path.dirname(ckpt_path), exist_ok=True)
@@ -77,10 +78,8 @@ os.makedirs(os.path.dirname(ckpt_path), exist_ok=True)
 
 # DATA
 # Vectorize the data.
-input_texts = []
-target_texts = []
-input_characters = set()
-target_characters = set()
+
+# First, convert bhsac tree into lines of tuples.
 # TODO drop EMES trop sefarim (iyov, mishlei, tehilim)
 path = "../data/bhsac.tsv"
 bhsac_df = pd.read_csv(path, sep="\t")
@@ -91,87 +90,24 @@ lines = list(parsers.groupby_looper2(bhsac_df))
 #  It also means that we can't even predict for longer pesukim, I think, since max sequence length is a hyperparam.
 lines.sort(key=lambda x: len(x[0]))
 
-for line in lines[: min(num_samples, len(lines) - 1)]:
-    pasuk, input_text, target_text, _, _, _, _ = line
-    input_text = input_text.copy()
-    target_text = target_text.copy()
+# Turn the lines (one pasuk each) into character and text sets for the trop LSTM
+input_characters, target_characters, input_texts, target_texts = parsers.compile_sets(lines=lines, num_samples=num_samples)
 
-    # We use "tab" as the "start sequence" character
-    # for the targets, and "\n" as "end sequence" character.
-    target_text.insert(0, "\t")
-    target_text.append("\n")
-    input_texts.append(input_text)
-    target_texts.append(target_text)
-
-    # Compile character sets
-    for char in input_text:
-        if char not in input_characters:
-            input_characters.add(char)
-    for char in target_text:
-        if char not in target_characters:
-            target_characters.add(char)
-
-# TODO-DECIDE is this where we're setting it to be sentence length?
-# TODO-DONE should encode grammar tokens, not sentence length (for full model)
-# For length-only binary model- Use simpler input texts for training.
+# For case of length-only binary model- Use simpler input texts for training.
 original_input_texts = input_texts
 if style == "length":
     # We only pass sentence length into the model
-    input_characters = ["x"]
-    input_texts = []
+    input_characters, input_texts = parsers.grammar_to_length(original_input_texts)
 
-    for sent in original_input_texts:
-        simple_sent = []
-        for char in sent:
-            simple_sent.append("x")
-        input_texts.append(simple_sent)
-
-# Aggregate
-input_characters = sorted(list(input_characters))
-target_characters = sorted(list(target_characters))
+# Aggregate data into arrays
 num_encoder_tokens = len(input_characters)
 num_decoder_tokens = len(target_characters)
 max_encoder_seq_length = max([len(txt) for txt in input_texts])
 max_decoder_seq_length = max([len(txt) for txt in target_texts])
+# Convert sets from compile_sets() into categorical data tables ready for the LSTM
+encoder_input_data, decoder_input_data, decoder_target_data, input_token_index, target_token_index = parsers.build_lstm_data(input_characters=input_characters, target_characters=target_characters, input_texts=input_texts, target_texts=target_texts)
 
-print("Number of samples:", len(input_texts))
-print("Number of unique input tokens:", num_encoder_tokens)
-print("Number of unique output tokens:", num_decoder_tokens)
-print("Max sequence length for inputs:", max_encoder_seq_length)
-print("Max sequence length for outputs:", max_decoder_seq_length)
-
-# Index all input and output chars
-input_token_index = dict([(char, i) for i, char in enumerate(input_characters)])
-target_token_index = dict([(char, i) for i, char in enumerate(target_characters)])
-
-# Compile numerical datasets
-encoder_input_data = np.zeros(
-    (len(input_texts), max_encoder_seq_length, num_encoder_tokens), dtype="float32"
-)
-decoder_input_data = np.zeros(
-    (len(input_texts), max_decoder_seq_length, num_decoder_tokens), dtype="float32"
-)
-decoder_target_data = np.zeros(
-    (len(input_texts), max_decoder_seq_length, num_decoder_tokens), dtype="float32"
-)
-
-for i, (input_text, target_text) in enumerate(zip(input_texts, target_texts)):
-    for t, char in enumerate(input_text):
-        encoder_input_data[i, t, input_token_index[char]] = 1.0
-    # TODO-DECIDE do we need an input stop token? Why?
-    # if style == "full": # skip for "length" only model, since rest will be zeroes.
-    #     encoder_input_data[i, t+1:, input_token_index[" "]] = 1.0
-    for t, char in enumerate(target_text):
-        # decoder_target_data is ahead of decoder_input_data by one timestep
-        decoder_input_data[i, t, target_token_index[char]] = 1.0
-        if t > 0:
-            # decoder_target_data will be ahead by one timestep
-            # and will not include the start character.
-            decoder_target_data[i, t - 1, target_token_index[char]] = 1.0
-    # decoder_input_data[i, t + 1 :, target_token_index[" "]] = 1.0
-    # decoder_target_data[i, t:, target_token_index[" "]] = 1.0
-
-# Create dataset
+# Create tf.data.datasets
 # We need this crazy idx trick to figure out our train-test split for our own validation.
 idx = range(num_samples)
 ds = tf.data.Dataset.from_tensor_slices(((encoder_input_data, decoder_input_data), decoder_target_data, np.array(idx).reshape(-1,1)))
@@ -193,29 +129,7 @@ train_idx.sort()
 test_idx.sort()
 
 # MODEL
-# Define an input sequence and process it.
-encoder_inputs = keras.Input(shape=(None, num_encoder_tokens))
-encoder = keras.layers.LSTM(latent_dim, return_state=True)
-encoder_outputs, state_h, state_c = encoder(encoder_inputs)
-
-# We discard `encoder_outputs` and only keep the states.
-encoder_states = [state_h, state_c]
-
-# Set up the decoder, using `encoder_states` as initial state.
-decoder_inputs = keras.Input(shape=(None, num_decoder_tokens))
-
-# We set up our decoder to return full output sequences,
-# and to return internal states as well. We don't use the
-# return states in the training model, but we will use them in inference.
-decoder_lstm = keras.layers.LSTM(latent_dim, return_sequences=True, return_state=True)
-decoder_outputs, _, _ = decoder_lstm(decoder_inputs, initial_state=encoder_states)
-decoder_dense = keras.layers.Dense(num_decoder_tokens, activation="softmax")
-decoder_outputs = decoder_dense(decoder_outputs)
-
-# Define the model that will turn
-# `encoder_input_data` & `decoder_input_data` into `decoder_target_data`
-model = keras.Model([encoder_inputs, decoder_inputs], decoder_outputs)
-
+model = models.lstm(num_encoder_tokens=num_encoder_tokens, num_decoder_tokens=num_decoder_tokens, latent_dim=latent_dim)
 # Callbacks
 early_stopper = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=patience, min_delta=0.005)
 model_checkpoint = tf.keras.callbacks.ModelCheckpoint(ckpt_path, monitor='val_loss', save_best_only=True)
@@ -246,82 +160,26 @@ Output will be the next target token.
 """
 
 # Define sampling models
-# Restore the model and construct the encoder and decoder.
+# Restore the trained model and construct the encoder and decoder sub-models.
+# We can also start by loading a model from here and run inference.
+# TODO refactor inference into separate module.
 model = keras.models.load_model(ckpt_path)
+encoder_model, decoder_model = models.lstm_sampling_models(model)
 
-encoder_inputs = model.input[0]  # input_1
-encoder_outputs, state_h_enc, state_c_enc = model.layers[2].output  # lstm_1
-encoder_states = [state_h_enc, state_c_enc]
-encoder_model = keras.Model(encoder_inputs, encoder_states)
-
-decoder_inputs = model.input[1]  # input_2
-decoder_state_input_h = keras.Input(shape=(latent_dim,), name="input_3")
-decoder_state_input_c = keras.Input(shape=(latent_dim,), name="input_4")
-decoder_states_inputs = [decoder_state_input_h, decoder_state_input_c]
-decoder_lstm = model.layers[3]
-decoder_outputs, state_h_dec, state_c_dec = decoder_lstm(
-    decoder_inputs, initial_state=decoder_states_inputs
-)
-decoder_states = [state_h_dec, state_c_dec]
-decoder_dense = model.layers[4]
-decoder_outputs = decoder_dense(decoder_outputs)
-decoder_model = keras.Model(
-    [decoder_inputs] + decoder_states_inputs, [decoder_outputs] + decoder_states
-)
-
-# Reverse-lookup token index to decode sequences back to
-# something readable.
+# Reverse-lookup token index to decode sequences back to something readable.
 reverse_input_char_index = dict((i, char) for char, i in input_token_index.items())
 reverse_target_char_index = dict((i, char) for char, i in target_token_index.items())
 
-
-def decode_sequence(input_seq):
-    # Encode the input as state vectors.
-    states_value = encoder_model.predict(input_seq)
-
-    # Generate empty target sequence of length 1.
-    target_seq = np.zeros((1, 1, num_decoder_tokens))
-    # Populate the first character of target sequence with the start character.
-    target_seq[0, 0, target_token_index["\t"]] = 1.0
-
-    # Sampling loop for a batch of sequences
-    # (to simplify, here we assume a batch of size 1).
-    stop_condition = False
-    decoded_sentence = ""
-    while not stop_condition:
-        output_tokens, h, c = decoder_model.predict([target_seq] + states_value)
-
-        # Sample a token
-        sampled_token_index = np.argmax(output_tokens[0, -1, :])
-        sampled_char = reverse_target_char_index[sampled_token_index]
-        decoded_sentence += sampled_char
-
-        # Exit condition: either hit max length
-        # or find stop character.
-        if sampled_char == "\n" or len(decoded_sentence) > max_decoder_seq_length:
-            stop_condition = True
-
-        # Update the target sequence (of length 1).
-        target_seq = np.zeros((1, 1, num_decoder_tokens))
-        target_seq[0, 0, sampled_token_index] = 1.0
-
-        # Update states
-        states_value = [h, c]
-    return decoded_sentence
-
-
-"""
-You can now generate decoded sentences as such:
-"""
-
 print(f"num test elems in train (should be zero!): {np.isin(test_idx, train_idx).sum()}")
 
+# TODO store decoded pesukim in machine readable format. Add original pesukim (with original trop) to format.
 with open(os.path.join("log", f"{model_name}_{version}_validation_generated.txt"), "w") as valid_file:
     for seq_index in test_idx:
         # Take one sequence (part of the training set)
         # for trying out decoding.
         input_seq = encoder_input_data[seq_index: seq_index + 1]
-        decoded_sentence = decode_sequence(input_seq)
+        # decoded_sentence = decode_sequence(input_seq)
+        decoded_sentence = models.decode_sequence(input_seq, encoder_model, decoder_model, reverse_target_char_index, target_token_index, max_decoder_seq_length)
         print("-", file=valid_file)
         # print("Input sentence:", input_texts[seq_index], file=valid_file)
         print("Input sentence:", original_input_texts[seq_index], file=valid_file)
@@ -329,3 +187,4 @@ with open(os.path.join("log", f"{model_name}_{version}_validation_generated.txt"
         print("Decoded sentence:", [utils.trop_names[x] for x in list(decoded_sentence[:-1])], file=valid_file)
 
 print("Done!")
+# TODO transformers experiment.

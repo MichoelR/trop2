@@ -82,6 +82,106 @@ def groupby_looper2(bhsac_df):
         yield sent_word, sent_gram, sent_trope, sent_word_nodes, sent_gram_nodes, sent_trope_nodes, verse_id
 
 
+def compile_sets(lines, num_samples):
+    """Input comes from list(groupby_looper2(bhsac_df)). Turns the lines into character and text sets for the trop LSTM.
+
+    The data will still need further preprocessing (build_lstm_inputs())."""
+    # Set of characters in each language
+    input_characters = set()
+    target_characters = set()
+    # Set of texts for each language
+    input_texts = []
+    target_texts = []
+
+    for line in lines[: min(num_samples, len(lines) - 1)]:
+        pasuk, input_text, target_text, _, _, _, _ = line
+        input_text = input_text.copy()
+        target_text = target_text.copy()
+
+        # We use "tab" as the "start sequence" character
+        # for the targets, and "\n" as "end sequence" character.
+        target_text.insert(0, "\t")
+        target_text.append("\n")
+        input_texts.append(input_text)
+        target_texts.append(target_text)
+
+        # Compile character sets
+        for char in input_text:
+            if char not in input_characters:
+                input_characters.add(char)
+        for char in target_text:
+            if char not in target_characters:
+                target_characters.add(char)
+    return input_characters, target_characters, input_texts, target_texts
+
+
+def grammar_to_length(original_input_texts):
+    """Turns a set of grammar texts into a set of binary sequences. This encodes only the length of the sentence.txt
+
+    This allows us to test a null hypothesis- trop is dependent on the length of the pasuk. Alternatively, the
+    model is only learning the length of the pasuk."""
+    # You will need to save input_characters since our new data only encodes one character, not the full grammar alphabet.
+    input_characters = ["x"]
+    input_texts = []
+
+    for sent in original_input_texts:
+        simple_sent = []
+        for char in sent:
+            simple_sent.append("x")
+        input_texts.append(simple_sent)
+
+    return input_characters, input_texts
+
+
+def build_lstm_data(input_characters, target_characters, input_texts, target_texts):
+    """Converts sets from compile_sets() into categorical data tables ready for the LSTM."""
+    input_characters = sorted(list(input_characters))
+    target_characters = sorted(list(target_characters))
+    num_encoder_tokens = len(input_characters)
+    num_decoder_tokens = len(target_characters)
+    max_encoder_seq_length = max([len(txt) for txt in input_texts])
+    max_decoder_seq_length = max([len(txt) for txt in target_texts])
+
+    print("Number of samples:", len(input_texts))
+    print("Number of unique input tokens:", num_encoder_tokens)
+    print("Number of unique output tokens:", num_decoder_tokens)
+    print("Max sequence length for inputs:", max_encoder_seq_length)
+    print("Max sequence length for outputs:", max_decoder_seq_length)
+
+    # Index all input and output chars
+    input_token_index = dict([(char, i) for i, char in enumerate(input_characters)])
+    target_token_index = dict([(char, i) for i, char in enumerate(target_characters)])
+
+    # Compile numerical datasets
+    encoder_input_data = np.zeros(
+        (len(input_texts), max_encoder_seq_length, num_encoder_tokens), dtype="float32"
+    )
+    decoder_input_data = np.zeros(
+        (len(input_texts), max_decoder_seq_length, num_decoder_tokens), dtype="float32"
+    )
+    decoder_target_data = np.zeros(
+        (len(input_texts), max_decoder_seq_length, num_decoder_tokens), dtype="float32"
+    )
+
+    for i, (input_text, target_text) in enumerate(zip(input_texts, target_texts)):
+        for t, char in enumerate(input_text):
+            encoder_input_data[i, t, input_token_index[char]] = 1.0
+        # TODO-DECIDE do we need an input stop token? Why?
+        # if style == "full": # skip for "length" only model, since rest will be zeroes.
+        #     encoder_input_data[i, t+1:, input_token_index[" "]] = 1.0
+        for t, char in enumerate(target_text):
+            # decoder_target_data is ahead of decoder_input_data by one timestep
+            decoder_input_data[i, t, target_token_index[char]] = 1.0
+            if t > 0:
+                # decoder_target_data will be ahead by one timestep
+                # and will not include the start character.
+                decoder_target_data[i, t - 1, target_token_index[char]] = 1.0
+        # decoder_input_data[i, t + 1 :, target_token_index[" "]] = 1.0
+        # decoder_target_data[i, t:, target_token_index[" "]] = 1.0
+
+    return encoder_input_data, decoder_input_data, decoder_target_data, input_token_index, target_token_index
+
+
 if __name__ == "__main__":
     path = "data/bhsac.tsv"
     bhsac_df = pd.read_csv(path, sep="\t")
