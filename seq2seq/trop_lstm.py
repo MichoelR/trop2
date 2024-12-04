@@ -186,3 +186,5 @@ with open(os.path.join("log", f"{model_name}_{version}_validation_generated.txt"
 
 print("Done!")
 # TODO transformers experiment.
+# TODO confirm we only get one trop per word, not a second trop showing accented character.
+# TODO test trop prediction from END of pasuk (reverse order). Both RNN and transformer.

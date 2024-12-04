@@ -6,3 +6,4 @@ out/*
 __pycache__/*
 venv/*
 *validation_generated*.txt
+transformers/translator/*

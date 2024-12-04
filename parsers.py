@@ -8,7 +8,9 @@ import utils
 
 
 def groupby_looper2(bhsac_df):
-    """Yields a single verse at a time, in order, with human readable identifier."""
+    """Yields a single verse at a time, in order, with human readable identifier.
+
+    For trop: meteg is not included, sof pasuk is, we only take one trop per word."""
     # Groupby looping
     pattern = "[" + "".join(utils.trops) + "]"
     gby = bhsac_df.groupby(by="in.verse")
@@ -60,6 +62,9 @@ def groupby_looper2(bhsac_df):
                 # res = re.search(pattern, word)
                     all_trope = re.findall(pattern, word)
                     if len(all_trope):
+                        # chr(1433)=pashta- used to indicate the accented syllable. But doesn't this just show up as two pashtas? So why not take the first one?
+                        # TODO check with ta whether this is the only double trop we need to worry about.
+                        # TODO extract both trope in cases were the same trope is not doubled.
                         if all_trope[-1] == chr(1433):
                             word_trope = all_trope[-1]
                         else:
