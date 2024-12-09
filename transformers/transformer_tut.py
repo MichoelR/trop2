@@ -1,6 +1,4 @@
-import logging
-import time
-
+"""https://www.tensorflow.org/text/tutorials/transformer by Francois Chollett."""
 import numpy as np
 import matplotlib.pyplot as plt
 

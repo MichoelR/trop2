@@ -63,14 +63,16 @@ def groupby_looper2(bhsac_df):
                     all_trope = re.findall(pattern, word)
                     if len(all_trope):
                         # chr(1433)=pashta- used to indicate the accented syllable. But doesn't this just show up as two pashtas? So why not take the first one?
-                        # TODO check with ta whether this is the only double trop we need to worry about.
-                        # TODO extract both trope in cases were the same trope is not doubled.
-                        if all_trope[-1] == chr(1433):
-                            word_trope = all_trope[-1]
-                        else:
-                            word_trope = all_trope[0]
-                        sent_trope.append(word_trope)
-                        sent_trope_nodes.append(row.n)
+                        # TODO-DONE check with ta whether this is the only double trop we need to worry about.
+                        # TODO-DONE extract both trope in cases were the same trope is not doubled.
+                        word_trope = set(all_trope)
+                        # if all_trope[-1] == chr(1433):
+                        #     word_trope = all_trope[-1]
+                        # else:
+                        #     word_trope = all_trope[0]
+                        # sent_trope.append(word_trope)
+                        sent_trope.extend(word_trope)
+                        sent_trope_nodes.extend([row.n for x in range(len(all_trope))])
                     else:
                         pass
                         # print(f"skipping {word}")
@@ -87,37 +89,40 @@ def groupby_looper2(bhsac_df):
         yield sent_word, sent_gram, sent_trope, sent_word_nodes, sent_gram_nodes, sent_trope_nodes, verse_id
 
 
-def compile_sets(lines, num_samples):
+def compile_sets(lines, num_samples=None):
     """Input comes from list(groupby_looper2(bhsac_df)). Turns the lines into character and text sets for the trop LSTM.
     The grammar will be in a prefix graph notation (a sentence with phrase label prepended to each phrase/clause).
 
     The data will still need further preprocessing (build_lstm_inputs())."""
     # Set of characters in each language
-    input_characters = set()
-    target_characters = set()
+    input_characters = []
+    target_characters = []
     # Set of texts for each language
     input_texts = []
     target_texts = []
+    if not num_samples:
+        num_samples = len(lines)
 
-    for line in lines[: min(num_samples, len(lines) - 1)]:
+    for line in lines[:num_samples]:
         pasuk, input_text, target_text, _, _, _, _ = line
         input_text = input_text.copy()
         target_text = target_text.copy()
 
+        # TODO if we use LSTM again, we should encode START and STOP characters in build_lstm_data() since we removed them here.
         # We use "tab" as the "start sequence" character
         # for the targets, and "\n" as "end sequence" character.
-        target_text.insert(0, "\t")
-        target_text.append("\n")
+        # target_text.insert(0, "\t")
+        # target_text.append("\n")
         input_texts.append(input_text)
         target_texts.append(target_text)
 
         # Compile character sets
         for char in input_text:
             if char not in input_characters:
-                input_characters.add(char)
+                input_characters.append(char)
         for char in target_text:
             if char not in target_characters:
-                target_characters.add(char)
+                target_characters.append(char)
     return input_characters, target_characters, input_texts, target_texts
 
 
@@ -186,6 +191,35 @@ def build_lstm_data(input_characters, target_characters, input_texts, target_tex
         # decoder_target_data[i, t:, target_token_index[" "]] = 1.0
 
     return encoder_input_data, decoder_input_data, decoder_target_data, input_token_index, target_token_index
+
+
+def build_transformer_data(input_characters, target_characters, input_texts, target_texts):
+    # Index all input and output chars
+    input_token_index = dict([(char, i) for i, char in enumerate(input_characters, start=3)])
+    target_token_index = dict([(char, i) for i, char in enumerate(target_characters, start=3)])
+    input_token_index["START"] = 1
+    target_token_index["START"] = 1
+    input_token_index["END"] = 2
+    target_token_index["END"] = 2
+
+    input_arr = np.zeros(shape=(len(input_texts), max([len(x) for x in input_texts])+2))
+    target_inputs = np.zeros(shape=(len(input_texts), max([len(x) for x in target_texts])+2))
+    target_labels = np.zeros(shape=(len(input_texts), max([len(x) for x in target_texts])+2))
+    input_arr[:, 0] = input_token_index["START"]
+    target_inputs[:, 0] = target_token_index["START"]
+
+    for (i, text) in enumerate(input_texts):
+        for (j, char) in enumerate(text):
+            input_arr[i, j+1] = input_token_index[char]
+        input_arr[i, j+2] = input_token_index["END"]
+
+    for (i, text) in enumerate(target_texts):
+        for (j, char) in enumerate(text):
+            target_inputs[i, j+1] = target_token_index[char]
+            target_labels[i, j] = target_token_index[char]
+        target_labels[i, j+1] = target_token_index["END"]
+
+    return input_arr, target_inputs, target_labels, input_token_index, target_token_index
 
 
 if __name__ == "__main__":
